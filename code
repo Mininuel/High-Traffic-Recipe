@@ -1,0 +1,376 @@
+# __________________________Data Validation___________________________
+# The Recipe dataset has 947 rows and 8 columns, I have validated all variables and some changes were made. the  variables and corresponding issues  and changes made are highlighted below:
+
+#recipe: numeric unique id of each recipe without missing values. No changes were made
+# calories: continuous numeric variables, 52 missing values observed. I filled missing values with mean calories by categories
+# carbohydrate: continuous numeric variables, 52 missing values observed. I filled missing values with mean carbohydrate by categories
+# sugar: continuous numeric variables, 52 missing values observed. I filled missing values with mean sugar by categories
+#protein: continuous numeric variables, 52 missing values observed. I filled missing values with mean protein by categories
+# category: 11 values without missing values in character but 10 unique values were described, 'chicken Breast' exist as a duplicate of 'Chicken'. I converted 'Chicken Breast' to "chicken"
+# servings: contains 4 unique values described as numeric but characters were observed, two of the unique values also exist as a description: '4 as a snack' and '6 as a snack'. I extracted the first number, then convert to integer
+# high_traffic: (Target variable) character variable with 574 'High' values  and 373 missing values that represents 'Not_High' for the traffic observed. I converted 'High' to 1 and other value 0.
+
+#_______________________Exploratory Data Analysis (EDA)__________________________
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.model_selection import GridSearchCV
+
+# importing data
+recipe= pd.read_csv('recipe_site_traffic_2212.csv')
+print(recipe.info())
+print (recipe.head())
+print(recipe.isna().sum())
+
+# Unique values in category columns
+print(recipe['category'].unique())
+print(recipe['servings'].unique())
+print(recipe['high_traffic'].unique())
+
+# __________________Data Cleaning_____________________
+# Extract the first digits in 'servings' and convert to integers
+recipe['servings']=recipe['servings'].str.extract(r'(\d+)').astype(int)
+print(recipe['servings'].unique())
+
+# Clean target column: convert 'High' to 1 and other values to 0
+recipe['high_traffic'] = recipe['high_traffic'].apply(lambda x: 1 if x == 'High' else 0)
+
+# merge duplicate categories in 'category'
+recipe['category']= recipe['category'].apply(lambda x: 'Chicken' if 'Chicken' in x else x)
+recipe['category']= recipe['category'].apply(lambda x: 'One_Dish_Meal' if 'One Dish Meal' in x else x)
+print(recipe['category'].unique())
+
+# calculate the threshold for missing value: 5%
+threshold = len(recipe) * 0.05
+print (threshold) # threshold is 47.35
+
+# the threshold calculated for missing value deletion is 47.35 and there are 52 missing in 4 numeric columns. I decided to fill the missing values for each column by the category mean.
+#  extract columns with missing values.
+cols_with_na = recipe.columns[recipe.isna().sum() > 0]
+print (cols_with_na)
+
+# use for loop to replace missing values with category mean
+for col in cols_with_na:
+    recipe_dict = recipe.groupby('category')[col].mean().to_dict() # calculates the mean value of each column by category and stores as a dictionary
+    recipe[col]= recipe[col].fillna(recipe['category'].map(recipe_dict)) # fills missing values in each column using the category mean
+
+# validate fillings
+print (recipe.isna().sum())
+print (recipe.info())
+
+#_______________________Exploratory Data Analysis (EDA)__________________________
+# Describe numerical features
+print(recipe.describe())
+
+# Continuos variables
+# The Continuous variables are calories, carbohydrate, sugar, protein. I decided to use boxplot to check the distributions as well as possible outliers
+# Boxplots for outlier detection
+fig, axes=plt.subplots(1,2, figsize=(15,5))
+sns.boxplot(data=recipe, y='calories', color='grey', ax=axes[0]).set_title('Boxplot of calories')
+sns.boxplot(data=recipe, y='carbohydrate', color='black', ax=axes[1]).set_title('Boxplot of carbohydrate')
+plt.show()
+
+fig, axes=plt.subplots(1,2, figsize=(15,5))
+sns.boxplot(data=recipe, y='sugar', color='green', ax=axes[0]).set_title('Boxplot of sugar')
+sns.boxplot(data=recipe, y='protein', color='blue', ax=axes[1]).set_title('Boxplot of protein')
+plt.show()
+
+# To check for the distribution (skewness) of the continuous numeric variables, the histograms below shows that the variables are left skewed with longer right tail. I applied log transformation which is shown in the next chart.
+# Set seaborn style
+sns.set_theme(style="whitegrid")
+
+# --------- UNIVARIATE ANALYSIS ---------
+fig, axes=plt.subplots(2,2, figsize=(15,5))
+# 1. Distribution of calories
+sns.histplot(recipe['calories'], bins=30, kde=True, ax=axes[0,0])
+axes[0,0].set_title('Distribution of Calories')
+axes[0,0].set_xlabel('Calories')
+axes[0,0].set_ylabel('Count')
+
+# Distribution of Sugar
+sns.histplot(recipe['sugar'], bins=30, kde=True, ax=axes[0,1])
+axes[0,1].set_title('Distribution of Sugar')
+axes[0,1].set_xlabel('Sugar')
+axes[0,1].set_ylabel('Count')
+
+# Distribution of Carbohydrate
+sns.histplot(recipe['carbohydrate'], bins=30, kde=True, ax=axes[1,0])
+axes[1,0].set_title('Distribution of Carbohydrate')
+axes[1,0].set_xlabel('Carbohydrate')
+axes[1,0].set_ylabel('Count')
+
+# Distribution of Protein
+sns.histplot(recipe['protein'], bins=30, kde=True, ax=axes[1,1])
+axes[1,1].set_title('Distribution of Protein')
+axes[1,1].set_xlabel('Protein')
+axes[1,1].set_ylabel('Count')
+plt.show()
+
+# The histogram below shows the transformed variables using log normalization.
+fig, axes=plt.subplots(2,2, figsize=(15,5))
+# 1. Distribution of calories
+sns.histplot(recipe['calories'], log_scale= True, bins=30, kde=True, ax=axes[0,0])
+axes[0,0].set_title('Distribution of Calories (Log Scale)')
+axes[0,0].set_xlabel('Calories')
+axes[0,0].set_ylabel('Count')
+
+# Distribution of Sugar
+sns.histplot(recipe['sugar'], log_scale= True, bins=30, kde=True, ax=axes[0,1])
+axes[0,1].set_title('Distribution of Sugar (Log Scale)')
+axes[0,1].set_xlabel('Sugar')
+axes[0,1].set_ylabel('Count')
+
+# Distribution of Carbohydrate
+sns.histplot(recipe['carbohydrate'], log_scale= True, bins=30, kde=True, ax=axes[1,0])
+axes[1,0].set_title('Distribution of Carbohydrate (Log Scale)')
+axes[1,0].set_xlabel('Carbohydrate')
+axes[1,0].set_ylabel('Count')
+
+# Distribution of Protein
+sns.histplot(recipe['protein'], log_scale= True, bins=30, kde=True, ax=axes[1,1])
+axes[1,1].set_title('Distribution of Protein (Log Scale)')
+axes[1,1].set_xlabel('Protein')
+axes[1,1].set_ylabel('Count')
+plt.show()
+
+# 2. Countplot of categories
+
+# To get the popular categories, I applied the countplot on category. The 'Chicken' category appears to be the most cost common recipe.
+plt.figure(figsize=(10,5))
+sns.countplot(data=recipe, y='category', order=recipe['category'].value_counts().index)
+plt.title('Number of Recipes per Category')
+plt.xlabel('Count')
+plt.ylabel('Recipe Category')
+plt.show()
+
+# I applied countplot to determine the  number of servings that appears the most; 4 servings appears the most accounting for around 40% of the servings category.
+plt.figure(figsize=(10,5))
+sns.countplot(data=recipe, y='servings', order=recipe['servings'].value_counts().index)
+plt.title('Common number of servings')
+plt.xlabel('Count')
+plt.ylabel('Recipe Servings')
+plt.show()
+
+# --------- BIVARIATE ANALYSIS ---------
+
+# 3. Boxplot: In order to determine if there is any significant relationship between the continuous variables namely; calories, carbohydrate, sugar and protein with the target variable, I used boxplot to check. The plots showed no special relationship, the two groups in the target variable showed similar boxplots for the continuous variables.
+fig, axes=plt.subplots(2,2, figsize=(15,5))
+sns.boxplot(x='high_traffic', y='calories', data=recipe, ax=axes[0,0])
+axes[0,0].set_title('Calories vs High Traffic')
+axes[0,0].set_ylabel('Calories')
+
+sns.boxplot(x='high_traffic', y='carbohydrate', data=recipe, ax=axes[0,1])
+axes[0,1].set_title('Carbohydrate vs High Traffic')
+axes[0,1].set_ylabel('Carbohydrate')
+
+sns.boxplot(x='high_traffic', y='sugar', data=recipe, ax=axes[1,0])
+axes[1,0].set_title('Sugar vs High Traffic')
+axes[1,0].set_xlabel('High Traffic (1 = Yes, 0 = No)')
+axes[1,0].set_ylabel('Sugar')
+
+sns.boxplot(x='high_traffic', y='protein', data=recipe, ax=axes[1,1])
+axes[1,1].set_title('Protein vs High Traffic')
+axes[1,1].set_xlabel('High Traffic (1 = Yes, 0 = No)')
+axes[1,1].set_ylabel('Protein')
+plt.show()
+
+# 4. Barplot: High Traffic Rate by Category
+# I also checked for the relationship between the categorical variable namely; category and servings and the target variable (high_traffic).
+# For the 10 categories described, vegetable, potato and pork had the highest average for high_traffic (over 0.9), meaning they generate high traffic about 90% of the times they are used. The Chicken category was surprisingly low  at just over 0.4 meaning it generated high traffic at over 40% of the time it was used even though it was used more than any other category.
+plt.figure(figsize=(10,5))
+traffic_by_cat = recipe.groupby('category')['high_traffic'].mean().sort_values(ascending=False)
+sns.barplot(x=traffic_by_cat.values, y=traffic_by_cat.index)
+plt.title('Average High Traffic Rate by Category')
+plt.xlabel('Proportion of High Traffic')
+plt.ylabel('Recipe Category')
+plt.show()
+
+# For the number of servings, all four categories generated high traffic over 50% of the time used and the figures hovers just above and below 0.6 1.e 60%. The highest category for high traffic generation is 6 (number of servings) with an average of about 0.65 (65%).
+plt.figure(figsize=(10,5))
+traffic_by_servings = recipe.groupby('servings')['high_traffic'].mean().sort_values(ascending=False)
+sns.barplot(y=traffic_by_servings.values, x=traffic_by_servings.index)
+plt.title('Average High Traffic Rate by Servings')
+plt.xlabel('Proportion of High Traffic')
+plt.ylabel('Number of servings')
+plt.show()
+
+# Model Fitting and Evaluation
+# Predicting the recipe that will generate  high traffic is Logistic Regression problem, I chose the Logistic Regression Model it is easy to interpret and the recipe category seems to have more effect in determining the traffic generated. I am choosing the Random Forest Classifier for the comparison model.
+# I am using the Precision, Recall and PR AUC curve for model evaluation because the objective of the business is to correctly predict which recipe will generate high traffic 80% of the time. Precision value shows how often the predicted positives are correct. The recall values shows how many of the actual positives were correctly predicted. PR AUC is used because the dataset is slightly imbalanced and also focuses on correctly identifying the true positives (High traffic).
+
+# Preparing Data for Modelling
+# For the model development, calories, carbohydrate, sugar, protein, category, servings were chosen as features and high_traffic as the target variable.
+    # The following changes were made
+      # Log normalization of numeric features
+      # conversion of categorical variables to numbers
+      # split the data into training set and test set
+
+cal_var =recipe['calories'].var()
+car_var = recipe['carbohydrate'].var()
+sugar_var = recipe['sugar'].var()
+pro_var = recipe['protein'].var()
+
+print (f'Calories Variance: {cal_var}')
+print (f'Carbohydrate Variance: {car_var}')
+print (f'Sugar Variance: {sugar_var}')
+print (f'Protein Variance: {pro_var}')
+
+cols = recipe[['calories', 'carbohydrate', 'sugar', 'protein']]
+
+# Some the features have high variances  and are significantly skewed, so I decided to perform log normalization as described in the charts above for the continuous variables.
+for col in cols:
+    recipe[col]= np.log1p(recipe[col])
+
+cal_var =recipe['calories'].var()
+car_var = recipe['carbohydrate'].var()
+sugar_var = recipe['sugar'].var()
+pro_var = recipe['protein'].var()
+
+print (f'Calories Variance: {cal_var}')
+print (f'Carbohydrate Variance: {car_var}')
+print (f'Sugar Variance: {sugar_var}')
+print (f'Protein Variance: {pro_var}')
+
+# One-hot encode 'category' and 'servings'
+le=LabelEncoder()
+recipe['category']=le.fit_transform(recipe['category'])
+recipe['servings']=le.fit_transform(recipe['servings'])
+
+# Features and target
+X = recipe.drop(columns=['recipe', 'high_traffic'])
+y = recipe['high_traffic']
+
+# Identify categorical columns
+categorical_features = ['category', 'servings']
+numeric_features = X.drop(columns=categorical_features).columns.tolist()
+
+
+# Split the data
+X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=42)
+
+# -------- BASELINE MODEL: LOGISTIC REGRESSION --------
+logreg =LogisticRegression(max_iter=1000)
+
+logreg.fit(X_train, y_train)
+y_pred_log = logreg.predict(X_test)
+
+print("Logistic Regression Results")
+print(confusion_matrix(y_test, y_pred_log))
+print(classification_report(y_test, y_pred_log))
+
+
+# Extract feature importance
+importance = np.abs(logreg.coef_[0])  # Absolute value of coefficients
+feature_importance = pd.DataFrame({'Feature': X_train.columns, 'Importance': importance})
+feature_importance = feature_importance.sort_values(by='Importance', ascending=False)
+
+# Plot for Logistic Regression
+plt.figure(figsize=(10,6))
+plt.barh(feature_importance['Feature'], feature_importance['Importance'])
+plt.xlabel("Importance Score")
+plt.ylabel("Feature")
+plt.title("Feature Importance in Logistic Regression")
+plt.gca().invert_yaxis()  # To show most important features at the top
+plt.show()
+
+
+# -------- COMPARISON MODEL: RANDOM FOREST --------
+# Finding the best parameter for RandomForestClassifier
+# Define the parameter grid
+param_grid = {
+    'n_estimators': [100, 200, 300],       # Number of trees
+    'max_depth': [10, 20, 30, None],       # Maximum depth of each tree
+    'min_samples_split': [2, 5, 10],       # Minimum samples needed to split
+    'min_samples_leaf': [1, 2, 4],         # Minimum samples per leaf
+    'max_features': ['sqrt', 'log2']       # Number of features to consider
+}
+
+# Initialize the RandomForestClassifier
+rf = RandomForestClassifier(random_state=42)
+
+# Initialize GridSearchCV
+grid_search = GridSearchCV(
+    rf, param_grid, cv=5, scoring='accuracy', n_jobs=-1, verbose=2
+)
+
+# Fit GridSearchCV on training data
+grid_search.fit(X_train, y_train)
+
+# Print the best parameters
+print("Best parameters:", grid_search.best_params_)#
+
+
+best_rf = RandomForestClassifier(max_depth=20, max_features='sqrt', min_samples_leaf=4, min_samples_split=2, n_estimators=100, random_state=42)
+best_rf.fit(X_train, y_train)
+y_pred_rf= best_rf.predict(X_test)
+
+
+print("Random Forest Results")
+print(confusion_matrix(y_test, y_pred_rf))
+print(classification_report(y_test, y_pred_rf))
+
+
+# Extract feature importance
+importance = best_rf.feature_importances_
+feature_importance = pd.DataFrame({'Feature': X_train.columns, 'Importance': importance})
+feature_importance = feature_importance.sort_values(by='Importance', ascending=False)
+
+
+# Plot for Random Forest
+plt.figure(figsize=(10,6))
+plt.barh(feature_importance['Feature'], feature_importance['Importance'])
+plt.xlabel("Importance Score")
+plt.ylabel("Feature")
+plt.title("Feature Importance in Random Forest")
+plt.gca().invert_yaxis()  # To show most important features at the top
+plt.show()
+
+#______________Model Evaluation
+# Results
+# The Precision value for the Logistic Regression models and Random Forest Classifier for the class 1 (High-traffic) are 0.85 and 0.82, recall value of 0.77 and 0.77 respectively. The logistic Regression model slightly outperform the Random Forest Classifier.
+
+#  Evaluation by Business Criteria
+# the PR AUC value 0.91 and 0.87 for the Logistic Regression model and the Randon Forest Classifier respectively. the Logistic Regression model edges the Random Forest Classifier here also, meaning it effectively identify high-traffic recipes more than the Random Forest Classifier. It has minimal false positives (high precision- 85%) and few false negative (High recall- 77%) while prioritizing identification of high-traffic recipes 91% of the time which is higher than the requested 80%.
+
+# Model Evaluation: Precision Recall curve AUC
+from sklearn.metrics import precision_recall_curve, auc
+
+# Get predicted probabilities for class 1
+y_probs_logistic = logreg.predict_proba(X_test)[:, 1]  # Logistic Regression
+y_probs_rf = best_rf.predict_proba(X_test)[:, 1]  # Random Forest
+
+# Compute Precision-Recall curve
+precision_logistic, recall_logistic, _ = precision_recall_curve(y_test, y_probs_logistic)
+precision_rf, recall_rf, _ = precision_recall_curve(y_test, y_probs_rf)
+
+# Compute AUC for PR curve
+pr_auc_logistic = auc(recall_logistic, precision_logistic)
+pr_auc_rf = auc(recall_rf, precision_rf)
+
+# Plot PR curves
+plt.figure(figsize=(8,6))
+plt.plot(recall_logistic, precision_logistic, label=f'Logistic Regression (AUC = {pr_auc_logistic:.4f})', color='blue')
+plt.plot(recall_rf, precision_rf, label=f'Random Forest (AUC = {pr_auc_rf:.4f})', color='red')
+plt.xlabel('Recall')
+plt.ylabel('Precision')
+plt.title('Precision-Recall Curve')
+plt.legend()
+plt.show()
+
+print (f' pr_auc_logistic: {pr_auc_logistic}')
+print (f' pr_auc_rf: {pr_auc_rf}')
+
+# Recommendations, by implementing this model, the more than 80% of the recipe uploaded on the website will be high-traffic recipes. I will recommend the following steps for smooth implementation of the model.
+# Test the model by comparing the traffic generated from using its predictions and random recipe choice.
+# Deploy the model using the web or mobile application
+# Analyze common features among high-traffic recipes to create new contents.
+# Stock-up on relevant ingredients linked to high-traffic recipes
+# Monitor performance regularly to adapt to changing user behavior
+# Re-train the model periodically with fresh data to maintain accuracy
